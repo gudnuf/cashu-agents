@@ -97,7 +97,11 @@ export default function Home() {
       // Add status message for fetching image
       setMessages((prev) => [
         ...prev,
-        { role: "status", content: "Generating image..." },
+        {
+          role: "status",
+          content:
+            "Sent 4 sats and the prompt to image generator. Waiting for response...",
+        },
       ]);
 
       const proofs = getProofsByAmount(1);
