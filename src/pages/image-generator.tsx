@@ -54,7 +54,7 @@ export default function BackgroundService() {
       const lastEvent = Number(localStorage.getItem("lastEvent"));
       if (lastEvent < event.created_at!) {
         localStorage.setItem("lastEvent", event.created_at!.toString());
-        console.log("New event:", event);
+        console.log("New event:", event.rawEvent());
       } else {
         return;
       }

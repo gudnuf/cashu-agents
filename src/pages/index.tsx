@@ -105,7 +105,7 @@ export default function Home() {
       ]);
 
       const proofs = getProofsByAmount(1);
-      removeProofs(proofs);
+      removeProofs(proofs || []);
 
       const req: ImgRequest = {
         id: Date.now().toString(),
