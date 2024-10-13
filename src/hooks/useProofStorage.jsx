@@ -122,9 +122,9 @@ export const ProofProvider = ({ children }) => {
 
   /**
    * only get the needed proofs for the given amount
-   * @param {*} amount
-   * @param {*} keysetId
-   * @returns
+   * @param {number} amount
+   * @param {string | undefined} keysetId
+   * @returns {Proof[]}
    */
   const getProofsByAmount = (amount, keysetId) => {
     const currentProofs = getStoredProofs();

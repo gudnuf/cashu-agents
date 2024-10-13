@@ -29,7 +29,6 @@ const addWalletToLocalStorage = (url, keysetId, unit, keys) => {
 };
 
 const setActiveWalletInLocalStorage = (keysetId) => {
-  console.log("Setting active wallet to keysetId:", keysetId);
   if (keysetId) {
     localStorage.setItem("activeWalletKeysetId", keysetId);
   } else {
@@ -144,7 +143,6 @@ export const WalletProvider = ({ children }) => {
       }
 
       setWallets(walletsTemp);
-      console.log("Wallets loaded:", walletsTemp);
 
       /* Set active wallet from local storage */
       const activeWalletKeysetId = localStorage.getItem("activeWalletKeysetId");

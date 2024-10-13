@@ -7,18 +7,22 @@ import { ImgRequest } from "./image-generator";
 import { initPrivkey, useNdk } from "@/hooks/useNostr";
 import { NDKPrivateKeySigner, NostrEvent, NDKEvent } from "@nostr-dev-kit/ndk";
 import useAi from "@/hooks/useAi";
+import { useProofStorage } from "@/hooks/useProofStorage";
+import { getEncodedToken, getEncodedTokenV4 } from "@cashu/cashu-ts";
+import { useWalletManager } from "@/hooks/useWalletManager";
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<
-    { role: "user" | "ai"; content: string; imageUrl?: string }[]
+    { role: "user" | "ai" | "status"; content: string; imageUrl?: string }[]
   >([]);
   const [invoice, setInvoice] = useState("");
   const [showQR, setShowQR] = useState(false);
-  const [imageGeneratorPubkey, setImageGeneratorPubkey] = useState(
-    "99c3e29d61a1c86c7ba77c2e355c4d05ecd5b4c6455d4b76034ae89479d54b3e"
-  );
+  const [imageGeneratorPubkey, setImageGeneratorPubkey] = useState("");
   const { generatePrompt } = useAi();
+  const { addProofs, removeProofs, getProofsByAmount, balance } =
+    useProofStorage();
+  const { activeWallet } = useWalletManager();
   const { receiveLightningPayment } = useCashuWallet();
   const { nip04Encrypt, publishNostrEvent, setSigner, ndk, nip04Decrypt } =
     useNdk();
@@ -34,40 +38,76 @@ export default function Home() {
     // Add user message to the chat
     setMessages((prev) => [...prev, { role: "user", content: input }]);
 
+    const handleSuccessfulReceive = () => {
+      console.log("Payment received successfully");
+      setShowQR(false);
+      continueImageGeneration(pubkey);
+    };
+
     try {
       // Get an invoice for 100 sats (adjust as needed)
-      const invoice = await receiveLightningPayment(100, () => {
-        console.log("Payment received successfully");
-      });
+      const invoice = await receiveLightningPayment(
+        100,
+        handleSuccessfulReceive
+      );
       setInvoice(invoice);
       setShowQR(true);
+    } catch (error) {
+      console.error("Error generating invoice:", error);
+      handleSuccessfulReceive();
+      // setMessages((prev) => [
+      //   ...prev,
+      //   {
+      //     role: "ai",
+      //     content:
+      //       "Sorry, there was an error generating the invoice. Please try again.",
+      //   },
+      // ]);
+    }
 
-      // Wait for 5 seconds
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      setShowQR(false);
+    setInput("");
+  };
 
-      // Use getImagePrompt to generate an image prompt
-      // const generatedPrompt = await generatePrompt(
-      //   "claude-3-5-sonnet-20240620",
-      //   input
-      // );
-      const generatedPrompt = "A photo of a cat";
+  const continueImageGeneration = async (pubkey: string) => {
+    try {
+      // Add status message for fetching prompt
+      setMessages((prev) => [
+        ...prev,
+        { role: "status", content: "Fetching prompt..." },
+      ]);
+
+      const generatedPrompt = await generatePrompt(
+        "claude-3-5-sonnet-20240620",
+        input
+      );
+      // const generatedPrompt = "A photo of a cat";
       if (!generatedPrompt) {
         throw new Error("No prompt generated");
       }
 
-      // Add AI response to the chat
+      // Remove status message and add AI response to the chat
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((msg) => msg.role !== "status"),
         {
           role: "ai",
           content: `We generated the following prompt: ${generatedPrompt}`,
         },
       ]);
 
+      // Add status message for fetching image
+      setMessages((prev) => [
+        ...prev,
+        { role: "status", content: "Generating image..." },
+      ]);
+
+      const proofs = getProofsByAmount(1);
+      removeProofs(proofs);
+
       const req: ImgRequest = {
         id: Date.now().toString(),
-        cash: "123",
+        cash: getEncodedTokenV4({
+          token: [{ proofs, mint: activeWallet!.mint.mintUrl }],
+        }),
         prompt: generatedPrompt,
       };
 
@@ -77,20 +117,20 @@ export default function Home() {
         throw new Error("Image generator pubkey not set");
       }
 
-      const encrypted = await nip04Encrypt(
-        JSON.stringify(req),
-        imageGeneratorPubkey
-      );
+      // const encrypted = await nip04Encrypt(
+      //   JSON.stringify(req),
+      //   imageGeneratorPubkey
+      // );
 
-      if (!encrypted) {
-        throw new Error("Failed to encrypt request");
-      }
+      // if (!encrypted) {
+      //   throw new Error("Failed to encrypt request");
+      // }
 
       await publishNostrEvent({
         kind: 4,
-        content: encrypted,
+        content: JSON.stringify(req),
         tags: [["p", imageGeneratorPubkey]],
-      } as NostrEvent);
+      } as NostrEvent).then(() => console.log("Event published"));
 
       const filter = {
         kinds: [4],
@@ -98,18 +138,19 @@ export default function Home() {
         since: Math.floor(Date.now() / 1000),
       };
 
-      const sub = ndk.subscribe(filter, { closeOnEose: true });
+      const sub = ndk.subscribe(filter);
       console.log("Subscribing to filter:", filter);
       sub.on("event", async (e: NDKEvent) => {
         console.log("handling");
-        const decrtyped = await nip04Decrypt(e.content, e.pubkey);
+        // const decrtyped = await nip04Decrypt(e.content, e.pubkey);
+        const decrtyped = e.content;
         if (decrtyped) {
           const response = JSON.parse(decrtyped) as { url: string };
           console.log("Request:", response);
           if (response.url) {
-            // Add AI response to the chat with the image URL
+            // Remove status message and add AI response to the chat with the image URL
             setMessages((prev) => [
-              ...prev,
+              ...prev.filter((msg) => msg.role !== "status"),
               {
                 role: "ai",
                 content: "Here is the generated image:",
@@ -138,7 +179,7 @@ export default function Home() {
     } catch (error) {
       console.error("Error generating image prompt:", error);
       setMessages((prev) => [
-        ...prev,
+        ...prev.filter((msg) => msg.role !== "status"),
         {
           role: "ai",
           content:
@@ -146,20 +187,23 @@ export default function Home() {
         },
       ]);
     }
-
-    setInput("");
   };
 
   return (
     <>
       <Head>
-        <title>AI Chat Interface</title>
+        <title> Chat</title>
         <meta name="description" content="AI Chat Interface" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">AI Chat Interface</h1>
+        <h1 className="text-3xl font-bold mb-6">Chat</h1>
+        <h2>
+          Enter anything you want and we will optimize the prompt for image
+          generation, then find an image generator AI to generate the image for
+          you.
+        </h2>
         <div className="mb-4">
           <input
             type="text"
@@ -181,6 +225,8 @@ export default function Home() {
                 className={`inline-block p-2 rounded-lg ${
                   message.role === "user"
                     ? "bg-blue-500 text-white"
+                    : message.role === "status"
+                    ? "bg-yellow-200 text-yellow-800"
                     : "bg-gray-200 text-gray-800"
                 }`}
               >
@@ -207,6 +253,8 @@ export default function Home() {
                 Pay Lightning Invoice to Continue
               </h2>
               <QRCode value={invoice} size={256} />
+              {activeWallet?.mint.mintUrl}
+              Amount: 100 sats
             </div>
           </div>
         )}

@@ -45,12 +45,12 @@ const NDKContext = createContext<NDKContextProps>({
 });
 
 const defaultRelays = [
-  "wss://nostr.mutinywallet.com/",
+  // "wss://nostr.mutinywallet.com/",
   "wss://relay.damus.io",
-  "wss://relay.snort.social",
-  "wss://relay.primal.net",
+  // "wss://relay.snort.social",
+  // "wss://relay.primal.net",
   "wss://bitcoiner.social",
-  "wss://relay.satoshidnc.com",
+  // "wss://relay.satoshidnc.com",
   "wss://nos.lol",
 ];
 
